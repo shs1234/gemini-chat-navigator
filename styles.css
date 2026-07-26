@@ -1,13 +1,13 @@
-/* Gemini Chat Navigator - 样式 */
-/* 简洁小巧的设计 */
+/* Gemini Chat Navigator - 스타일 */
+/* 간결하고 작은 디자인 */
 
-/* ==================== 面板容器 ==================== */
+/* ==================== 패널 컨테이너 ==================== */
 .gcn-panel {
   position: fixed;
   top: 50%;
   right: 0;
   transform: translateY(-50%);
-  width: 20px;
+  width: 50px;
   height: auto;
   max-height: 50vh;
   background: transparent;
@@ -19,12 +19,12 @@
   transition: width 0.2s ease;
 }
 
-/* ==================== 横杠容器（收缩状态） ==================== */
+/* ==================== 막대 컨테이너(접힌 상태) ==================== */
 .gcn-dots-container {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 4px;
+  padding: 8px 8px;
   background: transparent;
   transition: opacity 0.15s ease;
 }
@@ -34,9 +34,9 @@
   pointer-events: none;
 }
 
-/* 横杠样式 */
+/* 막대 스타일 */
 .gcn-dot {
-  width: 12px;
+  width: 16px;
   height: 2px;
   border-radius: 1px;
   background: rgba(0, 0, 0, 0.15);
@@ -46,15 +46,15 @@
 
 .gcn-dot:hover {
   background: rgba(26, 115, 232, 0.6);
-  width: 16px;
+  width: 20px;
 }
 
 .gcn-dot-active {
   background: rgba(26, 115, 232, 0.8);
-  width: 14px;
+  width: 18px;
 }
 
-/* ==================== 面板内容（展开状态） ==================== */
+/* ==================== 패널 내용(펼친 상태) ==================== */
 .gcn-panel-content {
   position: absolute;
   right: 0;
@@ -78,7 +78,7 @@
   opacity: 1;
 }
 
-/* ==================== 头部 ==================== */
+/* ==================== 헤더 ==================== */
 .gcn-header {
   display: flex;
   align-items: center;
@@ -103,7 +103,7 @@
   border-radius: 6px;
 }
 
-/* ==================== 搜索框 ==================== */
+/* ==================== 검색 상자 ==================== */
 .gcn-search {
   padding: 5px 8px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
@@ -131,7 +131,7 @@
   color: #9ca3af;
 }
 
-/* ==================== 问题列表 ==================== */
+/* ==================== 질문 목록 ==================== */
 .gcn-list {
   flex: 1;
   overflow-y: auto;
@@ -152,7 +152,7 @@
   border-radius: 2px;
 }
 
-/* ==================== 问题项 ==================== */
+/* ==================== 질문 항목 ==================== */
 .gcn-item {
   display: flex;
   align-items: flex-start;
@@ -170,7 +170,7 @@
   background: rgba(26, 115, 232, 0.08);
 }
 
-/* 小横杠 */
+/* 작은 막대 */
 .gcn-item-dot {
   width: 8px;
   height: 2px;
@@ -190,7 +190,7 @@
   width: 10px;
 }
 
-/* 内容 */
+/* 내용 */
 .gcn-item-content {
   flex: 1;
   min-width: 0;
@@ -212,7 +212,7 @@
   font-weight: 500;
 }
 
-/* ==================== 高亮效果 ==================== */
+/* ==================== 강조 효과 ==================== */
 .gcn-highlight {
   animation: gcn-pulse 1.5s ease-out;
 }
@@ -226,7 +226,7 @@
   }
 }
 
-/* ==================== 深色模式支持 ==================== */
+/* ==================== 다크 모드 지원 ==================== */
 @media (prefers-color-scheme: dark) {
   .gcn-dot {
     background: rgba(255, 255, 255, 0.15);
@@ -303,7 +303,7 @@
   }
 }
 
-/* ==================== 响应式调整 ==================== */
+/* ==================== 반응형 조정 ==================== */
 @media (max-width: 768px) {
   .gcn-panel {
     display: none;

@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>生成图标</title>
+  <title>아이콘 생성</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -42,34 +42,34 @@
   </style>
 </head>
 <body>
-  <h1>Gemini Chat Navigator 图标生成器</h1>
+  <h1>Gemini Chat Navigator 아이콘 생성기</h1>
 
   <div class="icon-container">
     <div class="icon-box">
       <p>16x16</p>
       <canvas id="icon16" width="16" height="16"></canvas>
-      <br><button onclick="download('icon16', 16)">下载</button>
+      <br><button onclick="download('icon16', 16)">다운로드</button>
     </div>
     <div class="icon-box">
       <p>48x48</p>
       <canvas id="icon48" width="48" height="48"></canvas>
-      <br><button onclick="download('icon48', 48)">下载</button>
+      <br><button onclick="download('icon48', 48)">다운로드</button>
     </div>
     <div class="icon-box">
       <p>128x128</p>
       <canvas id="icon128" width="128" height="128"></canvas>
-      <br><button onclick="download('icon128', 128)">下载</button>
+      <br><button onclick="download('icon128', 128)">다운로드</button>
     </div>
   </div>
 
-  <button onclick="downloadAll()">下载全部图标</button>
+  <button onclick="downloadAll()">모든 아이콘 다운로드</button>
 
   <div class="instructions">
-    <h3>使用说明</h3>
+    <h3>사용 설명</h3>
     <ol>
-      <li>点击"下载全部图标"按钮</li>
-      <li>将下载的图标文件移动到 <code>icons/</code> 目录</li>
-      <li>重新加载 Chrome 扩展</li>
+      <li>"모든 아이콘 다운로드" 버튼을 클릭합니다.</li>
+      <li>다운로드한 아이콘 파일을 <code>icons/</code> 디렉토리로 이동합니다.</li>
+      <li>Chrome 확장 프로그램을 다시 로드합니다.</li>
     </ol>
   </div>
 
@@ -78,15 +78,15 @@
       const ctx = canvas.getContext('2d');
       const scale = size / 128;
 
-      // 清空画布
+      // 캔버스 초기화
       ctx.clearRect(0, 0, size, size);
 
-      // 背景圆角矩形
+      // 둥근 모서리 사각형 배경
       ctx.fillStyle = '#1a73e8';
       roundRect(ctx, 0, 0, size, size, size * 0.15);
       ctx.fill();
 
-      // 绘制目录图标
+      // 목차 아이콘 그리기
       ctx.strokeStyle = 'white';
       ctx.lineWidth = Math.max(1, size * 0.06);
       ctx.lineCap = 'round';
@@ -97,7 +97,7 @@
       const startX = size * 0.28;
       const lineLength = size * 0.5;
 
-      // 三条横线表示目录
+      // 목차를 나타내는 세 개의 가로선
       for (let i = 0; i < 3; i++) {
         const y = padding + i * (lineHeight + lineGap);
         ctx.beginPath();
@@ -106,7 +106,7 @@
         ctx.stroke();
       }
 
-      // 右侧小箭头
+      // 우측 소형 화살표
       ctx.beginPath();
       const arrowX = size * 0.72;
       const arrowY = size * 0.5;
@@ -145,7 +145,7 @@
       setTimeout(() => download('icon128', 128), 200);
     }
 
-    // 初始化绘制
+    // 초기 그리기
     window.onload = function() {
       drawIcon(document.getElementById('icon16'), 16);
       drawIcon(document.getElementById('icon48'), 48);

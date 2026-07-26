@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Gemini Chat Navigator",
   "version": "1.0.0",
-  "description": "为 Gemini 对话生成浮动目录，快速定位问题位置",
+  "description": "Gemini 대화용 플로팅 목차를 생성하여 원하는 질문 위치로 빠르게 이동해 줍니다.",
   "permissions": [
     "storage",
     "activeTab"

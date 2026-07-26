@@ -1,50 +1,55 @@
 // Gemini Chat Navigator - Content Script
-// 为 Gemini 对话生成浮动目录导航
+// Gemini 대화용 플로팅 목차 네비게이션 생성
 
 (function() {
   'use strict';
 
-  // ==================== 配置 ====================
+  // ==================== 설정 ====================
   const CONFIG = {
-    PANEL_WIDTH_COLLAPSED: 28,      // 收缩状态宽度
-    PANEL_WIDTH_EXPANDED: 220,      // 展开状态宽度
-    PREVIEW_LENGTH: 35,             // 问题预览长度
-    HIGHLIGHT_DURATION: 2000,       // 高亮持续时间(ms)
-    DEBOUNCE_DELAY: 150,            // 防抖延迟
-    DOT_SIZE: 8,                    // 小圆点大小
-    DEBUG: true,                    // 调试模式
+    PANEL_WIDTH_COLLAPSED: 36,      // 축소 상태 너비
+    PANEL_WIDTH_EXPANDED: 220,      // 확장 상태 너비
+    PREVIEW_LENGTH: 35,             // 질문 미리보기 길이
+    HIGHLIGHT_DURATION: 2000,       // 하이라이트 지속 시간(ms)
+    DEBOUNCE_DELAY: 150,            // 디바운스 대기 시간
+    AUTO_SYNC_DELAY: 300,           // 자동 동기화 대기 시간
+    DOT_SIZE: 8,                    // 작은 원 크기
+    DEBUG: true,                    // 디버그 모드
   };
 
-  // 调试日志
+  // 디버그 로그
   function log(...args) {
     if (CONFIG.DEBUG) {
       console.log('[GCN]', ...args);
     }
   }
 
-  // ==================== 状态管理 ====================
-  let questions = [];                // 存储所有问题
-  let currentHighlightId = null;     // 当前高亮的问题ID
-  let isPanelExpanded = false;       // 面板是否展开
-  let searchQuery = '';              // 搜索关键词
-  let questionIdMap = new Map();     // ID 到问题的映射
-  let currentConversationId = '';    // 当前对话ID（用于检测对话切换）
-  let lastMessageTexts = new Set();  // 上一次检测到的消息文本
+  // ==================== 상태 관리 ====================
+  let questions = [];                // 모든 질문 저장
+  let currentHighlightId = null;     // 현재 하이라이트된 질문 ID
+  let isPanelExpanded = false;       // 패널 확장 여부
+  let searchQuery = '';              // 검색 키워드
+  let questionIdMap = new Map();     // ID to 질문 매핑
+  let currentConversationId = '';    // 현재 대화 ID (대화 전환 감지용)
+  let lastMessageTexts = new Set();  // 직전에 감지된 메시지 텍스트
+  let lastQuestionSignature = '';    // 자동 동기화용 질문 목록 서명
+  let questionSyncTimer = null;      // 자동 동기화 타이머
+  let alwaysShowPanel = false;       // 목차 패널 항상 표시 여부
+  let highlightMode = 'preserve';    // preserve 또는 viewport
 
-  // ==================== DOM 元素 ====================
+  // ==================== DOM 엘리먼트 ====================
   let panel = null;
   let questionList = null;
   let searchInput = null;
   let questionCount = null;
 
-  // ==================== 工具函数 ====================
+  // ==================== 유틸리티 함수 ====================
 
-  // 生成唯一ID
+  // 고유 ID 생성
   function generateId() {
     return 'gcn-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
   }
 
-  // 防抖函数
+  // 디바운스 함수
   function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -57,13 +62,13 @@
     };
   }
 
-  // 截断文本
+  // 텍스트 자르기
   function truncateText(text, maxLength) {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   }
 
-  // 格式化时间戳
+  // 타임스탬프 포맷팅
   function formatTime(timestamp) {
     const date = new Date(timestamp);
     const hours = date.getHours().toString().padStart(2, '0');
@@ -71,58 +76,80 @@
     return `${hours}:${minutes}`;
   }
 
-  // HTML 转义
+  // HTML 이스케이프
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  // ==================== 问题检测 ====================
+  // 질문 목록 변경 감지를 위한 서명 생성
+  function createQuestionSignature(messages) {
+    return messages
+      .map(el => cleanMessageText(el.textContent || ''))
+      .filter(text => text.length > 1)
+      .join('\n---gcn-question---\n');
+  }
 
-  // 检测用户消息 - Gemini 网页版特定选择器
-  // 用户消息通常有特定的类名或属性
-  function findUserMessages() {
+  // ==================== 질문 감지 ====================
+
+  // 사용자 메시지 감지 - Gemini 웹 버전 특정 선택자
+  // 사용자 메시지는 일반적으로 특정 클래스명이나 속성을 가집니다.
+  function findUserMessages(options = {}) {
+    const { includeProcessed = false } = options;
     const messages = [];
     const seenElements = new Set();
 
-    // Gemini 网页版的用户消息选择器
-    // 优先使用最精确的选择器
+    function addMessageElement(el) {
+      if (!includeProcessed && (el.dataset.gcnId || el.dataset.gcnProcessed)) {
+        return;
+      }
+
+      if (seenElements.has(el)) {
+        return;
+      }
+
+      const parentMessage = includeProcessed
+        ? el.parentElement?.closest('user-query, .user-query-container, [data-test-id="user-query"], [data-gcn-processed="true"]')
+        : el.closest('[data-gcn-processed="true"]');
+
+      if (parentMessage) {
+        return;
+      }
+
+      messages.push(el);
+      seenElements.add(el);
+    }
+
+    // Gemini 웹 버전의 사용자 메시지 선택자
+    // 가장 정확한 선택자를 우선 사용
     const selectors = [
-      // 主要选择器 - 用户查询块（最精确）
+      // 주요 선택자 - 사용자 쿼리 블록 (가장 정확함)
       'user-query',
       '.user-query-container',
       '[data-test-id="user-query"]',
     ];
 
-    // 尝试每个选择器，找到第一个有效的
+    // 각 선택자를 시도하여 첫 번째 유효한 것을 찾음
     for (const selector of selectors) {
       try {
         const elements = document.querySelectorAll(selector);
         if (elements.length > 0) {
           log(`Found ${elements.length} elements with selector: ${selector}`);
           elements.forEach(el => {
-            // 检查是否已经处理过，或者是否嵌套在已处理的元素中
-            if (!el.dataset.gcnId && !el.dataset.gcnProcessed) {
-              // 检查是否嵌套在另一个用户消息中
-              const parentMessage = el.closest('[data-gcn-processed="true"]');
-              if (!parentMessage) {
-                messages.push(el);
-                seenElements.add(el);
-              }
-            }
+            addMessageElement(el);
           });
-          if (messages.length > 0) break; // 找到就停止尝试其他选择器
+          if (messages.length > 0) break; // 찾았으면 다른 선택자 시도 중단
         }
       } catch (e) {
-        // 选择器可能无效，继续尝试下一个
+        // 선택자가 잘못되었을 수 있으므로 다음 시도
       }
     }
 
-    // 如果还是没有找到，尝试更智能的方法
+    // 그래도 찾지 못했다면 스마트 감지 방법 시도
     if (messages.length === 0) {
       log('Using smart detection');
-      const smartMessages = findUserMessagesSmart();
+      const smartMessages = findUserMessagesSmart({ includeProcessed });
       smartMessages.forEach(el => {
         if (!seenElements.has(el)) {
           messages.push(el);
@@ -134,33 +161,36 @@
     return messages;
   }
 
-  // 智能查找用户消息
-  function findUserMessagesSmart() {
+  // 사용자 메시지 스마트 검색
+  function findUserMessagesSmart(options = {}) {
+    const { includeProcessed = false } = options;
     const messages = [];
     const seen = new Set();
 
-    // 查找对话容器
+    // 대화 컨테이너 검색
     const chatContainer = document.querySelector('main, [role="log"], chat-window, .chat-container');
     if (!chatContainer) {
       log('Chat container not found');
       return messages;
     }
 
-    // 查找所有消息块
+    // 모든 메시지 블록 검색
     const allBlocks = chatContainer.querySelectorAll('*');
 
     allBlocks.forEach(el => {
-      // 跳过已处理的
-      if (el.dataset.gcnId || el.dataset.gcnProcessed) return;
+      // 이미 처리된 것은 건너뜀
+      if (!includeProcessed && (el.dataset.gcnId || el.dataset.gcnProcessed)) return;
 
-      // 跳过太小的元素
+      // 지나치게 작은 엘리먼트는 건너뜀
       const rect = el.getBoundingClientRect();
       if (rect.width < 100 || rect.height < 20) return;
 
-      // 检查是否是用户消息
+      // 사용자 메시지인지 확인
       if (isLikelyUserMessage(el)) {
-        // 确保不是嵌套在另一个用户消息中
-        const parentUserMessage = el.closest('[data-gcn-id]');
+        // 다른 사용자 메시지에 중첩되지 않았는지 확인
+        const parentUserMessage = includeProcessed
+          ? el.parentElement?.closest('user-query, .user-query-container, [data-test-id="user-query"], [data-gcn-id]')
+          : el.closest('[data-gcn-id]');
         if (!parentUserMessage && !seen.has(el)) {
           messages.push(el);
           seen.add(el);
@@ -172,30 +202,30 @@
     return messages;
   }
 
-  // 判断元素是否可能是用户消息
+  // 엘리먼트가 사용자 메시지인지 판단
   function isLikelyUserMessage(element) {
-    // 检查标签名
+    // 태그명 확인
     const tagName = element.tagName.toLowerCase();
 
-    // 排除一些明显不是消息的元素
+    // 메시지가 확실히 아닌 일부 엘리먼트 제외
     if (['script', 'style', 'meta', 'link', 'head', 'html', 'body'].includes(tagName)) {
       return false;
     }
 
-    // Gemini 特定：user-query 标签
+    // Gemini 특정: user-query 태그
     if (tagName === 'user-query') {
       return true;
     }
 
-    // 检查是否有用户消息的特征
-    // 1. 检查 data 属性
+    // 사용자 메시지의 특징이 있는지 확인
+    // 1. data 속성 확인
     if (element.dataset.user === 'true' ||
         element.dataset.sender === 'user' ||
         element.dataset.role === 'user') {
       return true;
     }
 
-    // 2. 检查类名
+    // 2. 클래스명 확인
     const className = element.className || '';
     if (typeof className === 'string') {
       const userClassPatterns = [
@@ -208,7 +238,7 @@
         }
       }
 
-      // 排除 AI 回复相关的类
+      // AI 답변 관련 클래스 제외
       const aiClassPatterns = [
         'model-response', 'ai-response', 'assistant',
         'bot-message', 'gemini-response', 'response-container'
@@ -220,11 +250,11 @@
       }
     }
 
-    // 3. 检查是否包含用户头像或图标（通常用户消息会有特定的头像）
+    // 3. 사용자 아바타 또는 아이콘 포함 여부 확인 (일반적으로 사용자 메시지에는 특정 아바타가 있음)
     const hasUserAvatar = element.querySelector('[data-avatar="user"], .user-avatar, .avatar-user');
     if (hasUserAvatar) return true;
 
-    // 4. 检查是否在 model-response 容器内
+    // 4. model-response 컨테이너 내부에 있는지 확인
     if (element.closest('.model-response, .ai-response, [data-role="assistant"]')) {
       return false;
     }
@@ -232,66 +262,69 @@
     return false;
   }
 
-  // 从消息元素提取文本
+  // 메시지 엘리먼트에서 텍스트 추출
   function extractMessageText(element) {
-    // 尝试找到文本内容区域
+    // 텍스트 내용 영역 찾기 시도
     const textSelectors = [
       '.query-text', '.message-text', '.content',
       'p', 'span', 'div'
     ];
 
-    // 首先尝试查找特定的文本容器
+    // 우선 특정 텍스트 컨테이너 찾기 시도
     for (const selector of textSelectors) {
       const textEls = element.querySelectorAll(selector);
       for (const textEl of textEls) {
         let text = textEl.textContent.trim();
-        // 清理 "You said" 等前缀
+        // "You said" 등의 접두사 정리
         text = cleanMessageText(text);
-        // 跳过太短的文本（可能是图标或按钮文字）
+        // 너무 짧은 텍스트는 건너뜀 (아이콘이나 버튼 텍스트일 수 있음)
         if (text && text.length > 3) {
           return text;
         }
       }
     }
 
-    // 直接获取元素的文本
+    // 엘리먼트의 텍스트 직접 가져오기
     let text = element.textContent.trim();
     text = cleanMessageText(text);
     return text.replace(/\s+/g, ' ').trim();
   }
 
-  // 清理消息文本
+  // 메시지 텍스트 정리
   function cleanMessageText(text) {
-    // 移除常见的标签前缀
+    // 일반적인 태그 접두사 제거
     const prefixesToRemove = [
       'You said:',
       'You said',
       'User:',
-      '用户:',
-      '提问:',
+      '사용자:',
+      '질문:',
+      '말씀하신 내용:',
+      '말씀하신 내용',
     ];
 
     let cleaned = text.replace(/\s+/g, ' ').trim();
     for (const prefix of prefixesToRemove) {
       if (cleaned.toLowerCase().startsWith(prefix.toLowerCase())) {
         cleaned = cleaned.substring(prefix.length).trim();
+        cleaned = cleaned.replace(/^[:：\-\s]+/, '').trim();
       }
     }
 
     return cleaned;
   }
 
-  // 处理新检测到的用户消息
-  function processUserMessage(element) {
+  // 새로 감지된 사용자 메시지 처리
+  function processUserMessage(element, preferredId = null) {
     const text = extractMessageText(element);
     log('processUserMessage, text:', text);
 
     if (!text || text.length < 2) {
       log('Text too short, skipping');
-      return null; // 忽略空消息
+      return null; // 빈 메시지 무시
     }
 
-    const id = generateId();
+    const id = preferredId || generateId();
     element.dataset.gcnId = id;
     log('Assigned id:', id, 'to element:', element);
 
@@ -300,7 +333,7 @@
       text,
       preview: truncateText(text, CONFIG.PREVIEW_LENGTH),
       timestamp: Date.now(),
-      elementRef: null, // 不直接存储元素引用，改为存储选择器
+      elementRef: null, // 엘리먼트 참조를 직접 저장하지 않고 선택자 저장으로 변경
       selector: generateSelector(element)
     };
 
@@ -311,13 +344,97 @@
     return question;
   }
 
-  // 生成元素选择器
+  // 질문을 DOM 순서대로 정렬
+  function sortQuestionsByDomOrder() {
+    questions.sort((a, b) => {
+      const aElement = a.selector ? document.querySelector(a.selector) : null;
+      const bElement = b.selector ? document.querySelector(b.selector) : null;
+
+      if (aElement && bElement && aElement !== bElement) {
+        const position = aElement.compareDocumentPosition(bElement);
+        if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+        if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      }
+
+      return a.timestamp - b.timestamp;
+    });
+  }
+
+  // 현재 DOM 기준으로 질문 목록 전체를 다시 구성
+  function syncQuestionsFromDom(preserveHighlightId = currentHighlightId) {
+    log('Syncing questions from DOM...');
+
+    const previousIdsByText = new Map();
+    questions.forEach(q => {
+      if (!previousIdsByText.has(q.text)) {
+        previousIdsByText.set(q.text, q.id);
+      }
+    });
+
+    questions = [];
+    questionIdMap.clear();
+
+    // 모든 요소의 gcn 표시를 제거
+    document.querySelectorAll('[data-gcn-id]').forEach(el => {
+      delete el.dataset.gcnId;
+    });
+    document.querySelectorAll('[data-gcn-processed]').forEach(el => {
+      delete el.dataset.gcnProcessed;
+    });
+
+    // 마커와 무관하게 현재 DOM 전체를 다시 읽어야 누락이 없음
+    const messages = findUserMessages({ includeProcessed: true });
+    lastQuestionSignature = createQuestionSignature(messages);
+
+    messages.forEach(el => {
+      if (!el.dataset.gcnProcessed) {
+        el.dataset.gcnProcessed = 'true';
+        const text = extractMessageText(el);
+        const previousId = previousIdsByText.get(text) || null;
+        if (previousId) {
+          previousIdsByText.delete(text);
+        }
+        processUserMessage(el, previousId);
+      }
+    });
+
+    sortQuestionsByDomOrder();
+
+    // 현재 메시지 텍스트 기록
+    lastMessageTexts.clear();
+    questions.forEach(q => {
+      lastMessageTexts.add(q.text);
+    });
+
+    renderQuestionList(preserveHighlightId);
+  }
+
+  // 현재 DOM의 질문 변화가 감지되면 목차를 자동으로 새로고침
+  function syncQuestionsIfChanged() {
+    const messages = findUserMessages({ includeProcessed: true });
+    const nextSignature = createQuestionSignature(messages);
+
+    if (nextSignature && nextSignature !== lastQuestionSignature) {
+      log('Question list changed, syncing automatically');
+      syncQuestionsFromDom(currentHighlightId);
+    }
+  }
+
+  // 스크롤/DOM 변경 직후 Gemini가 대화를 붙이는 시간을 고려해 지연 실행
+  function scheduleQuestionSync() {
+    clearTimeout(questionSyncTimer);
+    questionSyncTimer = setTimeout(() => {
+      syncQuestionsIfChanged();
+    }, CONFIG.AUTO_SYNC_DELAY);
+  }
+
+  // 엘리먼트 선택자 생성
   function generateSelector(element) {
     if (element.id) {
       return `#${element.id}`;
     }
 
-    // 使用 data 属性
+    // data 속성 사용
     if (element.dataset.gcnId) {
       return `[data-gcn-id="${element.dataset.gcnId}"]`;
     }
@@ -325,7 +442,7 @@
     return null;
   }
 
-  // 通过 ID 查找元素
+  // ID로 엘리먼트 찾기
   function findElementById(id) {
     log('findElementById called with id:', id);
     const question = questionIdMap.get(id);
@@ -336,11 +453,11 @@
       return null;
     }
 
-    // 首先尝试通过 data 属性查找
+    // 우선 data 속성을 통해 찾기 시도
     let element = document.querySelector(`[data-gcn-id="${id}"]`);
     log('Element found by data-gcn-id:', element);
 
-    // 如果找不到，尝试通过选择器查找
+    // 찾을 수 없으면 선택자를 통해 찾기 시도
     if (!element && question.selector) {
       element = document.querySelector(question.selector);
       log('Element found by selector:', element);
@@ -349,9 +466,9 @@
     return element;
   }
 
-  // ==================== 目录面板 UI ====================
+  // ==================== 목차 패널 UI ====================
 
-  // 创建目录面板
+  // 목차 패널 생성
   function createPanel() {
     panel = document.createElement('div');
     panel.id = 'gcn-panel';
@@ -361,11 +478,11 @@
       <div class="gcn-dots-container" id="gcn-dots"></div>
       <div class="gcn-panel-content">
         <div class="gcn-header">
-          <span class="gcn-title">目录</span>
+          <span class="gcn-title">목차</span>
           <span class="gcn-count" id="gcn-count">0</span>
         </div>
         <div class="gcn-search">
-          <input type="text" id="gcn-search" placeholder="搜索..." />
+          <input type="text" id="gcn-search" placeholder="검색..." />
         </div>
         <div class="gcn-list" id="gcn-list"></div>
       </div>
@@ -373,64 +490,69 @@
 
     document.body.appendChild(panel);
 
-    // 获取元素引用
+    // 엘리먼트 참조 가져오기
     questionList = document.getElementById('gcn-list');
     searchInput = document.getElementById('gcn-search');
     questionCount = document.getElementById('gcn-count');
 
-    // 绑定事件
+    // 이벤트 바인딩
     bindPanelEvents();
   }
 
-  // 绑定面板事件
+  // 패널 이벤트 바인딩
   function bindPanelEvents() {
-    // 鼠标悬停展开/收缩
+    const handleScroll = debounce(() => {
+      scheduleQuestionSync();
+      updateCurrentHighlight(highlightMode === 'viewport');
+    }, CONFIG.DEBOUNCE_DELAY);
+
+    // 마우스 오버 확장/축소
     panel.addEventListener('mouseenter', () => {
       expandPanel();
     });
 
     panel.addEventListener('mouseleave', () => {
+      if (alwaysShowPanel) return;
       collapsePanel();
     });
 
-    // 搜索输入
+    // 검색 입력
     searchInput.addEventListener('input', debounce((e) => {
       searchQuery = e.target.value.toLowerCase();
       renderQuestionList();
     }, CONFIG.DEBOUNCE_DELAY));
 
-    // 阻止面板内的点击事件冒泡
+    // 패널 내부 클릭 이벤트 버블링 방지
     panel.addEventListener('click', (e) => {
       e.stopPropagation();
     });
 
-    // 点击标题重新扫描
+    // 제목 클릭 시 다시 스캔
     const header = panel.querySelector('.gcn-header');
     if (header) {
       header.style.cursor = 'pointer';
-      header.title = '点击重新扫描';
+      header.title = '클릭하여 다시 스캔';
       header.addEventListener('click', () => {
         rescanMessages();
       });
     }
 
-    // 滚动监听
+    // 스크롤 리스너
     const scrollContainer = findScrollContainer();
     if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', debounce(() => {
-        updateCurrentHighlight();
-      }, CONFIG.DEBOUNCE_DELAY));
+      scrollContainer.addEventListener('scroll', handleScroll);
     } else {
-      window.addEventListener('scroll', debounce(() => {
-        updateCurrentHighlight();
-      }, CONFIG.DEBOUNCE_DELAY));
+      window.addEventListener('scroll', handleScroll);
     }
+
+    // Gemini가 내부 스크롤 컨테이너를 바꿔도 스크롤을 놓치지 않도록 캡처 단계에서도 감지
+    document.addEventListener('scroll', handleScroll, true);
   }
 
-  // 查找滚动容器
+  // 스크롤 컨테이너 검색
   function findScrollContainer() {
-    // Gemini 可能在特定容器内滚动
-    // 优先查找有 overflow-y: auto 或 scroll 的容器
+    // Gemini는 특정 컨테이너 내에서 스크롤할 수 있음
+    // overflow-y: auto 또는 scroll 속성을 가진 컨테이너 우선 검색
     const selectors = [
       'main',
       '.chat-container',
@@ -454,13 +576,13 @@
       }
     }
 
-    // 如果没找到，查找任何可滚动的父元素
+    // 찾지 못한 경우, 스크롤 가능한 모든 상위 엘리먼트 검색
     const allContainers = document.querySelectorAll('*');
     for (const container of allContainers) {
       const style = window.getComputedStyle(container);
       if ((style.overflowY === 'auto' || style.overflowY === 'scroll') &&
           container.scrollHeight > container.clientHeight &&
-          container.clientHeight > 300) { // 确保是主要滚动区域
+          container.clientHeight > 300) { // 주요 스크롤 영역인지 확인
         log('Found fallback scroll container');
         return container;
       }
@@ -469,24 +591,63 @@
     return null;
   }
 
-  // 展开面板
+  // 패널 확장
   function expandPanel() {
     if (isPanelExpanded) return;
     isPanelExpanded = true;
     panel.classList.add('gcn-expanded');
 
-    // 更新当前可见问题的高亮
+    // 현재 화면에 보이는 질문 하이라이트 업데이트
     updateCurrentHighlight();
   }
 
-  // 收缩面板
+  // 패널 축소
   function collapsePanel() {
+    if (alwaysShowPanel) return;
     if (!isPanelExpanded) return;
     isPanelExpanded = false;
     panel.classList.remove('gcn-expanded');
   }
 
-  // 渲染小圆点（收缩状态）
+  // 설정에 따라 패널 표시 방식을 적용
+  function applyPanelDisplayMode() {
+    if (!panel) return;
+
+    if (alwaysShowPanel) {
+      expandPanel();
+    } else if (!panel.matches(':hover')) {
+      collapsePanel();
+    }
+  }
+
+  // 저장된 설정 불러오기
+  function loadSettings() {
+    chrome.storage.local.get(['alwaysShowPanel', 'highlightMode'], (result) => {
+      alwaysShowPanel = Boolean(result.alwaysShowPanel);
+      highlightMode = result.highlightMode === 'viewport' ? 'viewport' : 'preserve';
+      applyPanelDisplayMode();
+      renderQuestionList();
+    });
+  }
+
+  // 팝업에서 설정을 바꾸면 즉시 반영
+  function setupSettingsListener() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+
+      if (changes.alwaysShowPanel) {
+        alwaysShowPanel = Boolean(changes.alwaysShowPanel.newValue);
+        applyPanelDisplayMode();
+      }
+
+      if (changes.highlightMode) {
+        highlightMode = changes.highlightMode.newValue === 'viewport' ? 'viewport' : 'preserve';
+        renderQuestionList();
+      }
+    });
+  }
+
+  // 가로선 렌더링 (축소 상태)
   function renderDots() {
     const dotsContainer = document.getElementById('gcn-dots');
     if (!dotsContainer) return;
@@ -495,7 +656,7 @@
       <div class="gcn-dot" data-id="${q.id}" title="${escapeHtml(q.preview)}"></div>
     `).join('');
 
-    // 绑定点击事件
+    // 클릭 이벤트 바인딩
     dotsContainer.querySelectorAll('.gcn-dot').forEach(dot => {
       dot.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -505,20 +666,20 @@
     });
   }
 
-  // 渲染问题列表
-  function renderQuestionList() {
+  // 질문 목록 렌더링
+  function renderQuestionList(preserveHighlightId = currentHighlightId) {
     if (!questionList) return;
 
-    // 过滤问题
+    // 질문 필터링
     const filteredQuestions = questions.filter(q => {
       if (!searchQuery) return true;
       return q.text.toLowerCase().includes(searchQuery);
     });
 
-    // 更新计数
+    // 개수 업데이트
     questionCount.textContent = filteredQuestions.length;
 
-    // 生成列表 HTML - 简洁的样式
+    // 목록 HTML 생성 - 심플한 스타일
     questionList.innerHTML = filteredQuestions.map((q, index) => `
       <div class="gcn-item" data-id="${q.id}">
         <div class="gcn-item-dot"></div>
@@ -528,7 +689,7 @@
       </div>
     `).join('');
 
-    // 绑定点击事件
+    // 클릭 이벤트 바인딩
     questionList.querySelectorAll('.gcn-item').forEach(item => {
       item.addEventListener('click', (e) => {
         log('Item clicked, dataset:', item.dataset);
@@ -539,16 +700,20 @@
       });
     });
 
-    // 同时更新小圆点
+    // 가로선도 동시에 업데이트
     renderDots();
 
-    // 更新高亮
-    updateCurrentHighlight();
+    // 설정에 따라 선택 유지 또는 현재 화면 기준 하이라이트 적용
+    if (highlightMode === 'preserve' && preserveHighlightId && filteredQuestions.some(q => q.id === preserveHighlightId)) {
+      highlightDirectoryItem(preserveHighlightId);
+    } else {
+      updateCurrentHighlight(highlightMode === 'viewport');
+    }
   }
 
-  // ==================== 跳转和高亮 ====================
+  // ==================== 이동 및 하이라이트 ====================
 
-  // 滚动到指定问题
+  // 지정된 질문으로 스크롤
   function scrollToQuestion(id) {
     log('scrollToQuestion called with id:', id);
     const element = findElementById(id);
@@ -559,7 +724,7 @@
       log('Current questions:', questions);
       log('questionIdMap:', questionIdMap);
 
-      // 尝试重新查找所有消息
+      // 모든 메시지 다시 검색 시도
       rescanMessages();
       const retryElement = findElementById(id);
       if (retryElement) {
@@ -573,16 +738,16 @@
     scrollToElement(element, id);
   }
 
-  // 执行滚动
+  // 스크롤 실행
   function scrollToElement(element, id) {
     log('scrollToElement called');
     log('Element:', element);
     log('Element rect:', element.getBoundingClientRect());
 
-    // 先强制展开面板
+    // 먼저 패널을 강제로 펼침
     expandPanel();
 
-    // 直接使用 scrollIntoView，这是最可靠的方法
+    // 가장 안정적인 방법인 scrollIntoView를 직접 사용
     try {
       element.scrollIntoView({
         behavior: 'smooth',
@@ -593,34 +758,25 @@
       log('scrollIntoView error:', e);
     }
 
-    // 添加高亮效果
+    // 강조 효과 추가
     highlightElement(element);
     highlightDirectoryItem(id);
 
-    // 不再自动收缩，等待用户鼠标离开展开界面
+    // 더 이상 자동으로 접지 않고, 사용자가 마우스를 뗄 때까지 펼친 상태 유지
   }
 
-  // 获取当前对话ID（通过URL）
+  // 현재 대화 ID 가져오기(URL 기준)
   function getCurrentConversationId() {
     return window.location.href;
   }
 
-  // 重新扫描消息
+  // 메시지 다시 스캔
   function rescanMessages() {
     log('Rescanning messages...');
-    questions = [];
-    questionIdMap.clear();
-    // 清除所有元素的gcn标记
-    document.querySelectorAll('[data-gcn-id]').forEach(el => {
-      delete el.dataset.gcnId;
-    });
-    document.querySelectorAll('[data-gcn-processed]').forEach(el => {
-      delete el.dataset.gcnProcessed;
-    });
-    scanExistingMessages();
+    syncQuestionsFromDom(currentHighlightId);
   }
 
-  // 检查是否切换了对话 - 基于URL变化
+  // 대화 전환 감지 - URL 변경 기준
   function checkConversationChange() {
     const newId = getCurrentConversationId();
     if (newId !== currentConversationId) {
@@ -632,12 +788,12 @@
     }
   }
 
-  // 检查是否切换了对话 - 基于DOM元素变化
+  // 대화 전환 감지 - DOM 엘리먼트 변경 기준
   function checkConversationChangeByDOM() {
-    const currentMessages = findUserMessages();
+    const currentMessages = findUserMessages({ includeProcessed: true });
     const currentTexts = new Set(currentMessages.map(el => extractMessageText(el)));
 
-    // 如果之前有消息但现在消息完全不同了
+    // 기존 메시지가 있었으나 현재 메시지와 완전히 다른 경우
     if (lastMessageTexts.size > 0 && currentMessages.length > 0) {
       let found = 0;
       for (const text of lastMessageTexts) {
@@ -645,7 +801,7 @@
           found++;
         }
       }
-      // 如果之前的消息文本都不在当前对话中，说明切换了对话
+      // 이전 메시지 텍스트가 현재 대화에 하나도 없다면 대화가 전환된 것임
       if (found === 0) {
         log('Conversation changed (DOM), rescanning...');
         log('Old messages count:', lastMessageTexts.size);
@@ -656,7 +812,7 @@
       }
     }
 
-    // 只有在没有检测到对话切换时才更新记录
+    // 대화 전환이 감지되지 않았을 때만 기록 업데이트
     lastMessageTexts.clear();
     currentMessages.forEach(el => {
       const text = extractMessageText(el);
@@ -668,25 +824,25 @@
     return false;
   }
 
-  // 高亮元素
+  // 엘리먼트 하이라이트
   function highlightElement(element) {
-    // 移除之前的高亮
+    // 이전 하이라이트 제거
     document.querySelectorAll('.gcn-highlight').forEach(el => {
       el.classList.remove('gcn-highlight');
     });
 
-    // 添加高亮类
+    // 하이라이트 클래스 추가
     element.classList.add('gcn-highlight');
 
-    // 定时移除高亮
+    // 일정 시간 후 하이라이트 제거
     setTimeout(() => {
       element.classList.remove('gcn-highlight');
     }, CONFIG.HIGHLIGHT_DURATION);
   }
 
-  // 高亮目录项
+  // 목차 항목 하이라이트
   function highlightDirectoryItem(id) {
-    // 移除之前的高亮
+    // 이전 하이라이트 제거
     if (questionList) {
       questionList.querySelectorAll('.gcn-item-active').forEach(el => {
         el.classList.remove('gcn-item-active');
@@ -700,7 +856,7 @@
       });
     }
 
-    // 添加高亮
+    // 하이라이트 추가
     if (questionList) {
       const item = questionList.querySelector(`[data-id="${id}"]`);
       if (item) {
@@ -718,85 +874,81 @@
     currentHighlightId = id;
   }
 
-  // 更新当前可见问题的高亮
-  function updateCurrentHighlight() {
-    if (!isPanelExpanded && !panel.matches(':hover')) return;
+  // 현재 화면에 보이는 질문 하이라이트 업데이트
+  function updateCurrentHighlight(force = false) {
+    if (!force && !isPanelExpanded && !panel.matches(':hover')) return;
 
     let currentQuestion = null;
-    let minDistance = Infinity;
+    let closestPreviousDistance = Infinity;
+    let closestVisibleDistance = Infinity;
+    const viewportReferenceY = window.innerHeight * 0.45;
 
     questions.forEach(q => {
       const element = findElementById(q.id);
       if (!element) return;
 
       const rect = element.getBoundingClientRect();
+      const elementTop = rect.top;
+      const elementCenter = rect.top + rect.height / 2;
 
-      // 检查是否在视口内
-      if (rect.top < window.innerHeight && rect.bottom > 0) {
-        const viewportCenter = window.innerHeight / 2;
-        const elementCenter = rect.top + rect.height / 2;
-        const distance = Math.abs(elementCenter - viewportCenter);
+      // 답변을 읽는 중에는 질문 자체가 화면 밖으로 올라가 있으므로,
+      // 기준선보다 위에 있는 가장 가까운 질문을 현재 질문으로 본다.
+      if (elementTop <= viewportReferenceY) {
+        const distance = viewportReferenceY - elementTop;
+        if (distance < closestPreviousDistance) {
+          closestPreviousDistance = distance;
+          currentQuestion = q;
+        }
+        return;
+      }
 
-        if (distance < minDistance) {
-          minDistance = distance;
+      // 아직 첫 질문 위쪽에 있다면 화면에 보이는 질문 중 가장 가까운 항목을 사용
+      if (!currentQuestion && rect.top < window.innerHeight && rect.bottom > 0) {
+        const distance = Math.abs(elementCenter - viewportReferenceY);
+        if (distance < closestVisibleDistance) {
+          closestVisibleDistance = distance;
           currentQuestion = q;
         }
       }
     });
 
-    // 更新高亮
+    // 하이라이트 업데이트
     if (currentQuestion && currentQuestion.id !== currentHighlightId) {
       highlightDirectoryItem(currentQuestion.id);
+    } else if (!currentQuestion && currentHighlightId) {
+      highlightDirectoryItem(currentHighlightId);
     }
   }
 
-  // ==================== 监听和初始化 ====================
+  // ==================== 리스너 및 초기화 ====================
 
-  // 扫描现有消息
+  // 기존 메시지 스캔
   function scanExistingMessages() {
-    const messages = findUserMessages();
-    messages.forEach(el => {
-      if (!el.dataset.gcnProcessed) {
-        el.dataset.gcnProcessed = 'true';
-        processUserMessage(el);
-      }
-    });
-
-    // 记录当前消息文本
-    lastMessageTexts.clear();
-    questions.forEach(q => {
-      lastMessageTexts.add(q.text);
-    });
-
-    if (messages.length > 0) {
-      renderQuestionList();
-    }
+    syncQuestionsFromDom(null);
   }
 
-  // 设置 DOM 监听器
+  // DOM 리스너 설정
   function setupMutationObserver() {
     const observer = new MutationObserver(debounce((mutations) => {
-      // 先检查是否切换了对话（基于DOM变化）
+      // 먼저 대화가 전환되었는지 확인 (DOM 변경 기준)
       const conversationChanged = checkConversationChangeByDOM();
 
-      // 如果对话已切换，跳过后续处理
+      // 대화가 전환되었다면 후속 처리 건너뜀
       if (conversationChanged) return;
 
-      // 再检查URL变化
+      // 그 다음 URL 변경 확인
       checkConversationChange();
 
-      let hasNewMessages = false;
-
-      // 只检查新添加的节点
+      // 새로 추가된 노드만 확인
       const newElements = [];
       mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // 检查节点本身
+            // 노드 자체 확인
             if (!node.dataset?.gcnProcessed && !node.dataset?.gcnId) {
               newElements.push(node);
             }
-            // 检查子节点
+            // 자식 노드 확인
             node.querySelectorAll?.('[data-gcn-processed]:not([data-gcn-processed])').forEach(el => {
               if (!el.dataset.gcnProcessed && !el.dataset.gcnId) {
                 newElements.push(el);
@@ -806,37 +958,9 @@
         });
       });
 
-      // 对新元素检查是否是用户消息
-      newElements.forEach(el => {
-        if (isLikelyUserMessage(el)) {
-          // 确保不是嵌套在已处理的消息中
-          const parentProcessed = el.closest('[data-gcn-processed="true"]');
-          if (!parentProcessed && !el.dataset.gcnProcessed) {
-            el.dataset.gcnProcessed = 'true';
-            const question = processUserMessage(el);
-            if (question) {
-              hasNewMessages = true;
-            }
-          }
-        }
-      });
-
-      // 如果没有通过新元素找到，尝试完整扫描
-      if (!hasNewMessages && newElements.length > 0) {
-        const messages = findUserMessages();
-        messages.forEach(el => {
-          if (!el.dataset.gcnProcessed) {
-            el.dataset.gcnProcessed = 'true';
-            const question = processUserMessage(el);
-            if (question) {
-              hasNewMessages = true;
-            }
-          }
-        });
-      }
-
-      if (hasNewMessages) {
-        renderQuestionList();
+      // 새 DOM이 붙으면 실제 질문 목록이 바뀌었는지 확인
+      if (newElements.length > 0) {
+        scheduleQuestionSync();
       }
     }, CONFIG.DEBOUNCE_DELAY));
 
@@ -845,15 +969,15 @@
       subtree: true
     });
 
-    // 监听URL变化（检测对话切换）- 多种方式确保能检测到
+    // URL 변경 감지 (대화 전환 감지) - 다양한 방식을 사용해 확실히 감지함
     let lastUrl = location.href;
 
-    // 方式1: popstate事件
+    // 방식 1: popstate 이벤트
     window.addEventListener('popstate', () => {
       checkConversationChange();
     });
 
-    // 方式2: MutationObserver监听head变化
+    // 방식 2: MutationObserver로 head 변경 감지
     new MutationObserver(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -861,7 +985,7 @@
       }
     }).observe(document.querySelector('head') || document, { subtree: true, childList: true });
 
-    // 方式3: 定期检查URL变化（最可靠，针对SPA应用）
+    // 방식 3: 주기적으로 URL 변경 확인 (가장 안정적이며 SPA 앱 대응용)
     setInterval(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -870,9 +994,9 @@
     }, 500);
   }
 
-  // 初始化
+  // 초기화
   function init() {
-    // 等待页面加载完成
+    // 페이지 로드 완료 대기
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
         setTimeout(initializeExtension, 1500);
@@ -883,27 +1007,31 @@
   }
 
   function initializeExtension() {
-    // 检查是否在 Gemini 页面
+    // Gemini 페이지인지 확인
     if (!window.location.hostname.includes('gemini.google.com')) {
       return;
     }
 
-    // 初始化对话ID
+    // 대화 ID 초기화
     currentConversationId = getCurrentConversationId();
 
-    // 创建面板
+    // 패널 생성
     createPanel();
 
-    // 扫描现有消息
+    // 설정 적용
+    loadSettings();
+    setupSettingsListener();
+
+    // 기존 메시지 스캔
     scanExistingMessages();
 
-    // 设置监听器
+    // 리스너 설정
     setupMutationObserver();
 
     console.log('Gemini Chat Navigator initialized');
     log('Questions found:', questions.length);
   }
 
-  // 启动
+  // 시작
   init();
 })();

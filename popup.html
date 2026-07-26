@@ -92,6 +92,88 @@
       line-height: 1.5;
     }
 
+    .settings {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #f8f9fa;
+      padding: 10px 12px;
+      border-radius: 8px;
+    }
+
+    .setting-text {
+      font-size: 12px;
+      color: #202124;
+      line-height: 1.4;
+    }
+
+    .setting-select {
+      min-width: 116px;
+      padding: 6px 8px;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      background: white;
+      color: #202124;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .setting-select:focus {
+      border-color: #1a73e8;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-flex;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #dadce0;
+      border-radius: 999px;
+      transition: background-color 0.2s;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      top: 2px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3);
+    }
+
+    .switch input:checked + .slider {
+      background: #1a73e8;
+    }
+
+    .switch input:checked + .slider::before {
+      transform: translateX(16px);
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -150,32 +232,49 @@
       <div class="header-icon">📋</div>
       <div class="header-text">
         <h1>Gemini Chat Navigator</h1>
-        <p>对话目录导航工具</p>
+        <p>대화 목차 내비게이션 도구</p>
       </div>
     </div>
 
     <div class="stats">
       <div class="stat-item">
         <div class="stat-value" id="question-count">0</div>
-        <div class="stat-label">问题数量</div>
+        <div class="stat-label">질문 개수</div>
       </div>
       <div class="stat-item">
         <div class="stat-value" id="session-time">-</div>
-        <div class="stat-label">会话时长</div>
+        <div class="stat-label">세션 시간</div>
       </div>
     </div>
 
     <div class="info">
-      <p>打开 Gemini 对话页面，目录面板会自动显示在右侧。将鼠标悬停在面板上即可展开查看所有问题。</p>
+      <p>Gemini 대화 페이지를 열면 목차 패널이 우측에 자동으로 표시됩니다.</p>
+    </div>
+
+    <div class="settings">
+      <label class="setting-item" for="always-show-panel">
+        <span class="setting-text">목차 항상 펼치기</span>
+        <span class="switch">
+          <input type="checkbox" id="always-show-panel">
+          <span class="slider"></span>
+        </span>
+      </label>
+      <label class="setting-item" for="highlight-mode">
+        <span class="setting-text">선택 방식</span>
+        <select class="setting-select" id="highlight-mode">
+          <option value="preserve">선택 유지</option>
+          <option value="viewport">현재 화면 자동 선택</option>
+        </select>
+      </label>
     </div>
 
     <div class="actions">
-      <button class="btn btn-primary" id="open-gemini">打开 Gemini</button>
-      <button class="btn btn-secondary" id="clear-data">清除数据</button>
+      <button class="btn btn-primary" id="open-gemini">Gemini 열기</button>
+      <button class="btn btn-secondary" id="clear-data">데이터 초기화</button>
     </div>
 
     <div class="footer">
-      <a href="https://github.com" target="_blank">查看帮助</a>
+      <a href="https://github.com" target="_blank">도움말 보기</a>
     </div>
   </div>
 

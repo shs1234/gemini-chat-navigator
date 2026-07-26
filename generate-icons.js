@@ -1,17 +1,17 @@
-// 生成图标的 Node.js 脚本
-// 运行: node generate-icons.js
+// 아이콘을 생성하는 Node.js 스크립트
+// 실행: node generate-icons.js
 
 const fs = require('fs');
 const path = require('path');
 
-// 简单的 PNG 图标生成器（不依赖外部库）
-// 使用纯 JavaScript 生成简单的 PNG 图标
+// 심플한 PNG 아이콘 생성기 (외부 라이브러리 비의존)
+// 순수 JavaScript를 사용하여 간단한 PNG 아이콘 생성
 
 function createPNGIcon(size) {
-  // PNG 文件头
+  // PNG 파일 헤더
   const signature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 
-  // IHDR chunk
+  // IHDR 청크
   const width = size;
   const height = size;
   const bitDepth = 8;
@@ -31,23 +31,23 @@ function createPNGIcon(size) {
 
   const ihdrChunk = createChunk('IHDR', ihdrData);
 
-  // 创建图像数据
+  // 이미지 데이터 생성
   const rawData = [];
   const backgroundColor = { r: 26, g: 115, b: 232, a: 255 }; // #1a73e8
   const foregroundColor = { r: 255, g: 255, b: 255, a: 255 }; // white
 
   for (let y = 0; y < height; y++) {
-    rawData.push(0); // 过滤器类型
+    rawData.push(0); // 필터 타입
     for (let x = 0; x < width; x++) {
-      // 创建圆角矩形背景
+      // 둥근 모서리 사각형 배경 생성
       const padding = size * 0.15;
       const radius = size * 0.15;
 
       let inBackground = false;
 
-      // 检查是否在圆角矩形内
+      // 둥근 모서리 사각형 내부에 있는지 확인
       if (x >= padding && x < width - padding && y >= padding && y < height - padding) {
-        // 检查四个角
+        // 네 모서리 확인
         const corners = [
           { cx: padding + radius, cy: padding + radius },
           { cx: width - padding - radius, cy: padding + radius },
@@ -77,7 +77,7 @@ function createPNGIcon(size) {
         }
       }
 
-      // 检查是否在目录图标线条上
+      // 목차 아이콘 선 위에 있는지 확인
       let inForeground = false;
       if (inBackground) {
         const lineStartX = size * 0.28;
@@ -101,21 +101,21 @@ function createPNGIcon(size) {
       } else if (inBackground) {
         rawData.push(backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
       } else {
-        rawData.push(0, 0, 0, 0); // 透明
+        rawData.push(0, 0, 0, 0); // 투명
       }
     }
   }
 
-  // 压缩图像数据
+  // 이미지 데이터 압축
   const zlib = require('zlib');
   const deflatedData = zlib.deflateSync(Buffer.from(rawData));
 
   const idatChunk = createChunk('IDAT', deflatedData);
 
-  // IEND chunk
+  // IEND 청크
   const iendChunk = createChunk('IEND', Buffer.alloc(0));
 
-  // 组合 PNG 文件
+  // PNG 파일 결합
   return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
 }
 
@@ -133,7 +133,7 @@ function createChunk(type, data) {
   return Buffer.concat([length, typeBuffer, data, crcBuffer]);
 }
 
-// CRC32 计算
+// CRC32 계산
 function crc32(data) {
   let crc = 0xFFFFFFFF;
   const table = getCRC32Table();
@@ -160,7 +160,7 @@ function getCRC32Table() {
   return crc32Table;
 }
 
-// 生成图标
+// 아이콘 생성
 const iconsDir = path.join(__dirname, 'icons');
 if (!fs.existsSync(iconsDir)) {
   fs.mkdirSync(iconsDir);

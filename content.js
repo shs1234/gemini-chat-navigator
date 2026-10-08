@@ -266,6 +266,9 @@
   function extractMessageText(element) {
     // 텍스트 내용 영역 찾기 시도
     const textSelectors = [
+      // 현재 Gemini는 .query-text 내부에 스크린 리더용 h5에도 질문을
+      // 반복해서 넣습니다. 부모 컨테이너가 아니라 실제 표시되는 줄을 우선 사용합니다.
+      '.query-text-line',
       '.query-text', '.message-text', '.content',
       'p', 'span', 'div'
     ];
@@ -274,6 +277,8 @@
     for (const selector of textSelectors) {
       const textEls = element.querySelectorAll(selector);
       for (const textEl of textEls) {
+        // 접근성 라벨은 질문 본문과 같은 문자열을 포함하므로 추출 대상에서 제외합니다.
+        if (textEl.matches('.screen-reader-user-query-label, [aria-hidden="true"]')) continue;
         let text = textEl.textContent.trim();
         // "You said" 등의 접두사 정리
         text = cleanMessageText(text);

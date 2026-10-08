@@ -103,6 +103,32 @@
   border-radius: 6px;
 }
 
+.gcn-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gcn-expand-button {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gcn-expand-button:hover {
+  background: rgba(26, 115, 232, 0.08);
+  color: #1a73e8;
+}
+
 /* ==================== 검색 상자 ==================== */
 .gcn-search {
   padding: 5px 8px;
@@ -207,6 +233,21 @@
   overflow: hidden;
 }
 
+.gcn-maximized {
+  max-height: 82vh;
+}
+
+.gcn-maximized .gcn-panel-content {
+  width: min(440px, 42vw);
+  max-height: 82vh;
+}
+
+.gcn-maximized .gcn-item-text {
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+}
+
 .gcn-item-active .gcn-item-text {
   color: #1a73e8;
   font-weight: 500;
@@ -256,6 +297,15 @@
   .gcn-count {
     background: #374151;
     color: #9ca3af;
+  }
+
+  .gcn-expand-button {
+    color: #9ca3af;
+  }
+
+  .gcn-expand-button:hover {
+    background: rgba(96, 165, 250, 0.12);
+    color: #60a5fa;
   }
 
   .gcn-search input {

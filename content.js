@@ -27,6 +27,7 @@
   let questions = [];                // 모든 질문 저장
   let currentHighlightId = null;     // 현재 하이라이트된 질문 ID
   let isPanelExpanded = false;       // 패널 확장 여부
+  let isPanelMaximized = false;      // 질문 전체 표시 모드
   let searchQuery = '';              // 검색 키워드
   let questionIdMap = new Map();     // ID to 질문 매핑
   let currentConversationId = '';    // 현재 대화 ID (대화 전환 감지용)
@@ -484,7 +485,10 @@
       <div class="gcn-panel-content">
         <div class="gcn-header">
           <span class="gcn-title">목차</span>
-          <span class="gcn-count" id="gcn-count">0</span>
+          <div class="gcn-header-actions">
+            <span class="gcn-count" id="gcn-count">0</span>
+            <button class="gcn-expand-button" type="button" aria-label="질문 전체 보기" title="질문 전체 보기">⤢</button>
+          </div>
         </div>
         <div class="gcn-search">
           <input type="text" id="gcn-search" placeholder="검색..." />
@@ -535,12 +539,24 @@
     // 제목 클릭 시 다시 스캔
     const header = panel.querySelector('.gcn-header');
     if (header) {
-      header.style.cursor = 'pointer';
       header.title = '클릭하여 다시 스캔';
-      header.addEventListener('click', () => {
+      header.addEventListener('click', (event) => {
+        if (event.target.closest('.gcn-expand-button')) return;
         rescanMessages();
       });
     }
+
+    const expandButton = panel.querySelector('.gcn-expand-button');
+    expandButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      isPanelMaximized = !isPanelMaximized;
+      panel.classList.toggle('gcn-maximized', isPanelMaximized);
+      expandButton.textContent = isPanelMaximized ? '⤡' : '⤢';
+      expandButton.setAttribute('aria-label', isPanelMaximized ? '기본 크기로 보기' : '질문 전체 보기');
+      expandButton.title = isPanelMaximized ? '기본 크기로 보기' : '질문 전체 보기';
+      if (isPanelMaximized) expandPanel();
+      renderQuestionList();
+    });
 
     // 스크롤 리스너
     const scrollContainer = findScrollContainer();
@@ -608,7 +624,7 @@
 
   // 패널 축소
   function collapsePanel() {
-    if (alwaysShowPanel) return;
+    if (alwaysShowPanel || isPanelMaximized) return;
     if (!isPanelExpanded) return;
     isPanelExpanded = false;
     panel.classList.remove('gcn-expanded');
@@ -689,7 +705,7 @@
       <div class="gcn-item" data-id="${q.id}">
         <div class="gcn-item-dot"></div>
         <div class="gcn-item-content">
-          <div class="gcn-item-text">${escapeHtml(q.preview)}</div>
+          <div class="gcn-item-text">${escapeHtml(isPanelMaximized ? q.text : q.preview)}</div>
         </div>
       </div>
     `).join('');
